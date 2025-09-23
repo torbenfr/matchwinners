@@ -10,15 +10,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.video.io.ffmpeg_writer import FFMPEG_VideoWriter
+
+from segment_runner import run_segment as run_segment_script
 
 
 @dataclass
@@ -43,15 +43,14 @@ def run_segment(segment: Segment, base_dir: Path, skip_existing: bool) -> None:
         return
     if segment.config is None:
         raise SystemExit(f"Segment '{segment.name}' is missing a config block.")
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as tmp:
-        json.dump(segment.config, tmp, indent=2)
-        tmp_path = Path(tmp.name)
-    cmd = [sys.executable, str(base_dir / segment.script), "--config", str(tmp_path)]
-    print(f"▶️  Rendering {segment.name} via {' '.join(cmd)}")
+    cfg = dict(segment.config)
     try:
-        subprocess.run(cmd, check=True)
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        cfg_output = str(segment.output.relative_to(base_dir))
+    except ValueError:
+        cfg_output = str(segment.output)
+    cfg["output"] = cfg_output
+    print(f"▶️  Rendering {segment.name} via {segment.script}")
+    run_segment_script(segment.script, cfg, base_dir)
 
 
 def concatenate_clips(order: List[Path], output: Path, codec: str, preset: str,

@@ -1,0 +1,17 @@
+{
+  "identifier": "local",
+  "text": "MERCURIAL VAPOR",
+  "output": "nike_slide.mp4",
+  "bg_override": "#000000",
+  "font_color": "#FFFFFF",
+  "slide_from": "top",
+  "exit_to": "bottom",
+  "in_duration": 1.0,
+  "hold_duration": 2.0,
+  "out_duration": 1.0,
+  "side_logo": "nike_logo.png",
+  "side_logo_height_factor": 0.98,
+  "side_logo_padding": 134,
+  "logo_fill_edges": true,
+  "freeze_logos": true
+}

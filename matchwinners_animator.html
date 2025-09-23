@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Matchwinners Animator</title>
+    <link rel="stylesheet" href="matchwinners_animator.css" />
+  </head>
+  <body>
+    <header class="mw-header">
+      <img src="mw-emblem_g.png" alt="Matchwinners" />
+      <h1>Matchwinners Animator</h1>
+    </header>
+    <main class="mw-main">
+      <section class="wizard-panel">
+        <div class="wizard-steps">
+          <button class="step-tab active" data-step="global">1 · Global Settings</button>
+          <button class="step-tab" data-step="segments">2 · Segments</button>
+        </div>
+        <div class="wizard-content">
+          <div class="step active" id="step-global">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="global-width">Canvas Width</label>
+                <input type="number" id="global-width" min="1" step="1" />
+              </div>
+              <div class="form-field">
+                <label for="global-height">Canvas Height</label>
+                <input type="number" id="global-height" min="1" step="1" />
+              </div>
+              <div class="form-field">
+                <label for="global-fps">Frames per Second</label>
+                <input type="number" id="global-fps" min="1" step="1" />
+              </div>
+              <div class="form-field">
+                <label for="global-duration">Target Duration (s)</label>
+                <input type="number" id="global-duration" min="0" step="0.1" />
+              </div>
+            </div>
+            <div class="font-row">
+              <div class="form-field" style="flex:1">
+                <label for="font-select">Primary Font</label>
+                <select id="font-select"></select>
+              </div>
+              <button id="font-upload-btn" type="button">Upload Font</button>
+            </div>
+            <p style="color: var(--muted); font-size:0.85rem; margin-top:8px;">
+              Settings are cached locally so you can quickly render multiple animations.
+            </p>
+          </div>
+          <div class="step" id="step-segments">
+            <div class="segment-toolbar">
+              <div class="segment-toolbar-left">
+                <label for="new-segment-type" style="color:var(--muted); font-size:0.85rem;">Add Segment</label>
+                <select id="new-segment-type"></select>
+                <button id="add-segment-btn" type="button">Add Segment</button>
+              </div>
+              <div class="runtime-status" id="runtime-status">
+                <span class="status-indicator"></span>
+                <span id="runtime-summary">00.0s / 00.0s</span>
+              </div>
+            </div>
+            <div id="segments-container"></div>
+            <div class="generate-bar">
+              <div class="output-selector">
+                <div class="form-field" style="margin:0;">
+                  <label for="output-filename">File Name</label>
+                  <input type="text" id="output-filename" placeholder="matchwinners_animation.mp4" />
+                </div>
+                <button id="choose-output-btn" type="button">Choose Output Folder (Desktop)</button>
+                <span id="chosen-output" style="color:var(--muted);"></span>
+              </div>
+              <button id="generate-btn" class="generate-button" type="button">Generate Animation</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="preview-panel">
+        <div class="preview-header">
+          <span style="font-weight:600;">Segment Preview</span>
+          <div class="preview-controls">
+            <button id="preview-zoom-out" type="button">- Zoom</button>
+            <button id="preview-zoom-in" type="button">+ Zoom</button>
+            <button id="preview-zoom-reset" type="button">Reset</button>
+            <button id="preview-stop" type="button">Stop</button>
+            <button id="preview-screenshot" type="button">Save Frame</button>
+          </div>
+        </div>
+        <div class="preview-body">
+          <video id="preview-video" autoplay muted loop controls></video>
+        </div>
+        <div id="preview-status">Ready.</div>
+      </section>
+    </main>
+    <div id="toast"></div>
+    <input type="file" id="font-upload-input" accept=".ttf,.otf,.ttc,.otc" hidden />
+    <script type="module" src="matchwinners_animator.js"></script>
+  </body>
+</html>

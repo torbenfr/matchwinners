@@ -1,0 +1,12 @@
+{
+  "identifier": "local",
+  "graphic": "nike_logo.png",
+  "output": "nike_snail.mp4",
+  "bg_override": "#000000",
+  "duration": 5,
+  "speed": 40,
+  "fill": true,
+  "gap": 80,
+  "logo_max_height": 80,
+  "fps": 30
+}
