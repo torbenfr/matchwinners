@@ -122,6 +122,30 @@ def apply_axis_rotation(img: Image.Image, axis: str, angle_deg: float) -> Image.
     return canvas
 
 
+def fade_factor(t: float, total: float, fade_in: float, fade_out: float) -> float:
+    if total <= 0:
+        return 1.0
+    factor = 1.0
+    if fade_in > 0:
+        factor = min(factor, max(0.0, min(1.0, t / fade_in)))
+    if fade_out > 0:
+        factor = min(factor, max(0.0, min(1.0, (total - t) / fade_out)))
+    return max(0.0, min(1.0, factor))
+
+
+def paste_with_alpha(frame: Image.Image, img: Image.Image, pos: Tuple[int, int], alpha: float) -> None:
+    if alpha <= 0.0:
+        return
+    if alpha >= 0.999:
+        frame.paste(img, pos, img)
+        return
+    temp = img.convert("RGBA") if img.mode != "RGBA" else img.copy()
+    r, g, b, a = temp.split()
+    a = a.point(lambda p: int(p * alpha))
+    temp.putalpha(a)
+    frame.paste(temp, pos, temp)
+
+
 @dataclass
 class RenderConfig:
     width: int; height: int; fps: int
@@ -130,6 +154,7 @@ class RenderConfig:
     slide_from: str
     exit_to: Optional[str]
     in_duration: float; hold_duration: float; out_duration: float
+    total_duration: float
     rotate_axis: str; rotate_angle: float; rotate_speed: float
     logo_img: Optional[Image.Image] = None
     logo_padding: int = 120
@@ -153,6 +178,9 @@ class RenderConfig:
     item_offsets: List[Tuple[int, int]] = field(default_factory=list)
     group_width: int = 0
     group_height: int = 0
+    logo_total_duration: float = 0.0
+    logo_fade_in: float = 0.0
+    logo_fade_out: float = 0.0
 
 
 def position_for_progress(progress: float, cfg: RenderConfig, item_size: Tuple[int, int]) -> Tuple[int, int]:
@@ -211,11 +239,12 @@ def render_frame(t: float, cfg: RenderConfig) -> Image.Image:
         lw, lh = cfg.logo_img.size
         y_logo = (cfg.height - lh) // 2
 
-        def anim_pos(final_x: int, side: str) -> int:
-            if cfg.freeze_logos:
-                return final_x
-            total = cfg.logo_in_duration + cfg.logo_hold_duration + cfg.logo_out_duration
-            tt = max(0.0, min(t, total))
+        def anim_pos(final_x: int, side: str) -> Tuple[int, float]:
+            total = cfg.logo_total_duration
+            tt = max(0.0, min(t, total)) if total > 0 else t
+            fade = fade_factor(tt, total, cfg.logo_fade_in, cfg.logo_fade_out) if total > 0 else 1.0
+            if cfg.freeze_logos or total == 0:
+                return final_x, fade
             in_d = cfg.logo_in_duration
             hold_d = cfg.logo_hold_duration
             out_d = cfg.logo_out_duration
@@ -227,27 +256,31 @@ def render_frame(t: float, cfg: RenderConfig) -> Image.Image:
             if tt <= in_d:
                 p = 0.0 if in_d == 0 else tt / in_d
                 e = ease_out_cubic(p)
-                return int(round(start + e * (final_x - start)))
-            if tt <= in_d + hold_d:
-                return final_x
-            if out_d == 0:
-                return exit_pos
-            t_out = tt - (in_d + hold_d)
-            p = 0.0 if out_d == 0 else min(1.0, t_out / out_d)
-            e = ease_in_cubic(p)
-            return int(round(final_x + e * (exit_pos - final_x)))
+                pos = int(round(start + e * (final_x - start)))
+            elif tt <= in_d + hold_d:
+                pos = final_x
+            elif out_d == 0:
+                pos = exit_pos
+            else:
+                t_out = tt - (in_d + hold_d)
+                p = 0.0 if out_d == 0 else min(1.0, t_out / out_d)
+                e = ease_in_cubic(p)
+                pos = int(round(final_x + e * (exit_pos - final_x)))
+            return pos, fade
 
         for lp in (cfg.logo_positions_left or []):
-            lx = anim_pos(lp, "left")
+            lx, lf = anim_pos(lp, "left")
             if lx + lw > 0 and lx < cfg.width:
-                frame.paste(cfg.logo_img, (lx, y_logo), cfg.logo_img)
+                paste_with_alpha(frame, cfg.logo_img, (lx, y_logo), lf)
         for rp in (cfg.logo_positions_right or []):
-            rx = anim_pos(rp, "right")
+            rx, rf = anim_pos(rp, "right")
             if rx < cfg.width and rx + lw > 0:
-                frame.paste(cfg.logo_img, (rx, y_logo), cfg.logo_img)
-        for sx in (cfg.logo_static_positions or []):
-            if sx + lw > 0 and sx < cfg.width:
-                frame.paste(cfg.logo_img, (sx, y_logo), cfg.logo_img)
+                paste_with_alpha(frame, cfg.logo_img, (rx, y_logo), rf)
+        if cfg.logo_static_positions:
+            static_alpha = fade_factor(t, cfg.total_duration, cfg.logo_fade_in, cfg.logo_fade_out)
+            for sx in cfg.logo_static_positions:
+                if sx + lw > 0 and sx < cfg.width:
+                    paste_with_alpha(frame, cfg.logo_img, (sx, y_logo), static_alpha)
     return frame
 
 
@@ -274,7 +307,7 @@ def main():
         "fps": 60,
         "output": "output_item.mp4",
         "bg_override": None,
-        "slide_from": "left",
+        "slide_from": "top",
         "exit_to": "auto",
         "in_duration": 0.8,
         "hold_duration": 2.5,
@@ -300,7 +333,9 @@ def main():
         "freeze_logos": False,
         "logo_fill_edges": False,
         "item_count": 1,
-        "item_spacing": 120
+        "item_spacing": 120,
+        "logo_fade_in": 0.0,
+        "logo_fade_out": 0.0
     }
     defaults.update({k: v for k, v in config_data.items() if k in defaults})
 
@@ -315,9 +350,9 @@ def main():
 
     parser.add_argument("--bg-override", default=defaults.get("bg_override"))
 
-    parser.add_argument("--slide-from", choices=["left", "right", "top", "bottom"],
-                        default=defaults.get("slide_from", "left"))
-    parser.add_argument("--exit-to", choices=["auto", "left", "right", "top", "bottom"],
+    parser.add_argument("--slide-from", choices=["top", "bottom"],
+                        default=defaults.get("slide_from", "top"))
+    parser.add_argument("--exit-to", choices=["auto", "top", "bottom"],
                         default=defaults.get("exit_to", "auto"))
     parser.add_argument("--in-duration", type=float, default=float(defaults.get("in_duration", 0.8)))
     parser.add_argument("--hold-duration", type=float, default=float(defaults.get("hold_duration", 2.5)))
@@ -359,6 +394,8 @@ def main():
     parser.add_argument("--no-logo-fill-edges", action="store_false", dest="logo_fill_edges", help=argparse.SUPPRESS)
     parser.add_argument("--item-count", type=int, default=int(defaults.get("item_count", 1)))
     parser.add_argument("--item-spacing", type=int, default=int(defaults.get("item_spacing", 120)))
+    parser.add_argument("--logo-fade-in", type=float, default=float(defaults.get("logo_fade_in", 0.0)))
+    parser.add_argument("--logo-fade-out", type=float, default=float(defaults.get("logo_fade_out", 0.0)))
 
     args = parser.parse_args(remaining)
 
@@ -396,17 +433,31 @@ def main():
     item_img = load_image(resolved_image, target_max_height, args.image_max_width)
     iw, ih = item_img.size
 
-    total_width = item_count * iw + spacing * (item_count - 1)
-    if total_width > args.width and total_width > 0:
-        scale = args.width / float(total_width)
+    section_width = max(1, args.width // (item_count * 2))
+    max_item_width = section_width
+    if iw > max_item_width:
+        scale = max_item_width / float(iw)
         iw = max(1, int(round(iw * scale)))
         ih = max(1, int(round(ih * scale)))
         item_img = item_img.resize((iw, ih), Image.LANCZOS)
-        total_width = item_count * iw + spacing * (item_count - 1)
 
-    item_offsets: List[Tuple[int, int]] = [(idx * (iw + spacing), 0) for idx in range(item_count)]
-    group_width = total_width
+    item_offsets: List[Tuple[int, int]] = []
+    logo_img: Optional[Image.Image] = None
+    logo_positions_left: List[int] = []
+    logo_positions_right: List[int] = []
+    logo_static_positions: List[int] = []
+
+    for idx in range(item_count):
+        section_start = idx * 2 * section_width
+        section_mid = section_start + section_width
+        item_x = section_mid + (section_width - iw) // 2
+        item_offsets.append((item_x, 0))
+
+    min_x = min((x for x, _ in item_offsets), default=0)
+    item_offsets = [(x - min_x, y) for x, y in item_offsets]
+    group_width = max((x + iw) for x, _ in item_offsets) if item_offsets else iw
     group_height = ih
+    group_left = max(0, (args.width - group_width) // 2)
 
     logo_img: Optional[Image.Image] = None
     logo_positions_left: List[int] = []
@@ -431,21 +482,31 @@ def main():
         logo_img_candidate = load_image(logo_path, max_logo_h, None)
         lw, _ = logo_img_candidate.size
 
-        group_x = max(0, (args.width - group_width) // 2)
-        item_intervals = [(group_x + offset_x, group_x + offset_x + iw) for offset_x, _ in item_offsets]
+        item_positions = [(group_left + offset_x, group_left + offset_x + iw) for offset_x, _ in item_offsets]
+        for start, end in item_positions:
+            left_start = max(start - lw - logo_padding, 0)
+            left_end = start - logo_padding
+            right_start = end + logo_padding
+            right_end = min(end + lw + logo_padding, args.width)
 
-        pos = 0
-        while pos <= args.width - lw:
-            overlaps = False
-            for start, end in item_intervals:
-                if pos < end and (pos + lw) > start:
-                    pos = end + logo_padding
-                    overlaps = True
-                    break
-            if overlaps:
-                continue
-            logo_static_positions.append(pos)
-            pos += lw + logo_padding
+            def fill_interval(a: int, b: int) -> List[int]:
+                interval = []
+                available = b - a
+                if available < lw:
+                    return interval
+                step = lw + logo_padding
+                if args.logo_fill_edges and step > 0:
+                    count = max(1, int((available + logo_padding) // step))
+                else:
+                    count = 1
+                total = count * lw + (count - 1) * logo_padding
+                base = a + max(0, (available - total) // 2)
+                for i in range(count):
+                    interval.append(int(base + i * (lw + logo_padding)))
+                return interval
+
+            logo_static_positions.extend(fill_interval(left_start, left_end))
+            logo_static_positions.extend(fill_interval(right_start, right_end))
 
         logo_img = logo_img_candidate
 
@@ -469,6 +530,7 @@ def main():
                        in_duration=max(0.0, args.in_duration),
                        hold_duration=max(0.0, args.hold_duration),
                        out_duration=max(0.0, args.out_duration),
+                       total_duration=total_duration,
                        rotate_axis=args.rotate_axis,
                        rotate_angle=max(0.0, args.rotate_angle),
                        rotate_speed=max(0.0, args.rotate_speed),
@@ -493,7 +555,10 @@ def main():
                        item_spacing=spacing,
                        item_offsets=item_offsets,
                        group_width=group_width,
-                       group_height=group_height)
+                       group_height=group_height,
+                       logo_total_duration=logo_total,
+                       logo_fade_in=max(0.0, args.logo_fade_in),
+                       logo_fade_out=max(0.0, args.logo_fade_out))
 
     def make_frame(tt: float) -> np.ndarray:
         return np.array(render_frame(tt, cfg))
