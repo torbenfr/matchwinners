@@ -1,0 +1,22 @@
+{
+  "identifier": "local",
+  "text": "Vodafone GigaNetz",
+  "output": "vodafone_slide.mp4",
+  "width": 3456,
+  "height": 108,
+  "fps": 30,
+  "duration": 4.2,
+  "in_duration": 0.8,
+  "hold_duration": 2.5,
+  "out_duration": 0.9,
+  "bg_override": "#E00201",
+  "font_color": "#FFFFFF",
+  "side_logo": "vodafone.png",
+  "side_logo_height_factor": 0.98,
+  "logo_in_duration": 0.5,
+  "logo_hold_duration": 2.8,
+  "logo_out_duration": 0.6,
+  "logo_slide_from_left": "left",
+  "logo_slide_from_right": "right",
+  "logo_fill_edges": true
+}

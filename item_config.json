@@ -1,0 +1,17 @@
+{
+  "identifier": "local",
+  "image": "vodafone.png",
+  "output": "vodafone_item.mp4",
+  "bg_override": "#000000",
+  "slide_from": "left",
+  "in_duration": 0.8,
+  "hold_duration": 2.5,
+  "out_duration": 0.8,
+  "image_height_factor": 0.6,
+  "rotate_axis": "y",
+  "rotate_angle": 35,
+  "rotate_speed": 120,
+  "side_logo": null,
+  "freeze_item": false,
+  "freeze_logos": false
+}

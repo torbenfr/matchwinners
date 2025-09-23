@@ -1,0 +1,140 @@
+{
+  "final_output": "nike_full_11904_1.mp4",
+  "canvas": {
+    "width": 11904,
+    "height": 108,
+    "fps": 60,
+    "pix_fmt": "yuv420p"
+  },
+  "segments": [
+    {
+      "name": "snail_intro",
+      "script": "brand_snail.py",
+      "output": "nike_snail.mp4",
+      "config": {
+        "identifier": "local",
+        "graphic": "nike_logo.png",
+        "output": "nike_snail.mp4",
+        "bg_override": "#000000",
+        "duration": 4,
+        "speed": 40,
+        "fill": true,
+        "gap": 80,
+        "logo_max_height": 88,
+        "fps": 60,
+        "width": 11904,
+        "height": 108
+      }
+    },
+    {
+      "name": "headline_slide",
+      "script": "brand_slide.py",
+      "output": "nike_slide.mp4",
+      "config": {
+        "identifier": "local",
+        "text": "MERCURIAL VAPOR",
+        "output": "nike_slide.mp4",
+        "bg_override": "#000000",
+        "font_color": "#FFFFFF",
+        "font_path": "Futura Std Extra Bold Condensed Oblique.ttf",
+        "slide_from": "top",
+        "exit_to": "bottom",
+        "in_duration": 1.0,
+        "hold_duration": 2.0,
+        "out_duration": 1.0,
+        "side_logo": "nike_logo.png",
+        "side_logo_height_factor": 0.98,
+        "side_logo_padding": 134,
+        "logo_fill_edges": true,
+        "freeze_logos": true,
+        "logo_in_duration": 1.0,
+        "logo_hold_duration": 2.0,
+        "logo_out_duration": 1.0,
+        "width": 11904,
+        "height": 108,
+        "fps": 60
+      }
+    },
+    {
+      "name": "domain_slide",
+      "script": "brand_domain.py",
+      "output": "nike_domain.mp4",
+      "config": {
+        "identifier": "local",
+        "domain": "NIKE.COM",
+        "output": "nike_domain.mp4",
+        "bg_override": "#000000",
+        "font_color": "#FFFFFF",
+        "font_path": "Futura Std Extra Bold Condensed Oblique.ttf",
+        "slide_from": "top",
+        "exit_to": "bottom",
+        "in_duration": 1.0,
+        "hold_duration": 2.0,
+        "out_duration": 1.0,
+        "side_logo": "nike_logo.png",
+        "side_logo_height_factor": 0.98,
+        "side_logo_padding": 134,
+        "logo_fill_edges": true,
+        "freeze_logos": true,
+        "logo_in_duration": 1.0,
+        "logo_hold_duration": 2.0,
+        "logo_out_duration": 1.0,
+        "width": 11904,
+        "height": 108,
+        "fps": 60
+      }
+    },
+    {
+      "name": "product_item",
+      "script": "brand_item.py",
+      "output": "nike_item.mp4",
+      "config": {
+        "identifier": "local",
+        "image": "nike_shoe.png",
+        "output": "nike_item.mp4",
+        "bg_override": "#000000",
+        "slide_from": "top",
+        "exit_to": "bottom",
+        "in_duration": 1.0,
+        "hold_duration": 2.0,
+        "out_duration": 1.0,
+        "image_height_factor": 1.7,
+        "rotate_axis": "none",
+        "rotate_angle": 0,
+        "rotate_speed": 0,
+        "side_logo": "nike_logo.png",
+        "side_logo_height_factor": 0.98,
+        "side_logo_padding": 134,
+        "logo_fill_edges": true,
+        "freeze_logos": true,
+        "item_count": 3,
+        "item_spacing": 200,
+        "logo_in_duration": 1.0,
+        "logo_hold_duration": 2.0,
+        "logo_out_duration": 1.0,
+        "width": 11904,
+        "height": 108,
+        "fps": 60
+      }
+    },
+    {
+      "name": "snail_outro",
+      "script": "brand_snail.py",
+      "output": "nike_snail.mp4",
+      "reuse": "snail_intro"
+    }
+  ],
+  "concat": {
+    "order": [
+      "nike_snail.mp4",
+      "nike_slide.mp4",
+      "nike_domain.mp4",
+      "nike_item.mp4",
+      "nike_snail.mp4"
+    ],
+    "codec": "libx264",
+    "preset": "medium",
+    "pixel_format": "yuv420p",
+    "ffmpeg_params": ["-tune", "animation"]
+  }
+}

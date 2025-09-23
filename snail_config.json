@@ -1,0 +1,11 @@
+{
+  "identifier": "local",
+  "graphic": "vodafone.png",
+  "output": "vodafone_snail.mp4",
+  "duration": 12,
+  "speed": 240,
+  "fill": true,
+  "gap": 60,
+  "copies": 3,
+  "bg_override": "#000000"
+}

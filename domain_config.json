@@ -1,0 +1,14 @@
+{
+  "identifier": "local",
+  "domain": "www.vodafone.de",
+  "output": "vodafone_domain.mp4",
+  "bg_override": "#E00201",
+  "font_color": "#FFFFFF",
+  "side_logo": "vodafone.png",
+  "side_logo_height_factor": 0.98,
+  "side_logo_padding": 120,
+  "logo_fill_edges": true,
+  "logo_in_duration": 0.5,
+  "logo_hold_duration": 2.8,
+  "logo_out_duration": 0.6
+}
