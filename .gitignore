@@ -1,36 +1,49 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-.venv-build/
-*.spec
+# Code / Konfiguration ignorieren
+**/*.py
+**/*.pyc
+**/__pycache__/
+**/*.json
+**/*.html
+**/*.htm
+**/*.js
+**/*.mjs
+**/*.cjs
+**/*.jsx
+**/*.ts
+**/*.tsx
+**/*.css
+**/*.scss
+**/*.sass
+**/*.map
 
-
-# Virtual Environments
-venv/
-.venv/
-ENV/
-env/
-*.env
-# --- macOS ---
+# System / IDE
 .DS_Store
-.AppleDouble
-.LSOverride
-Icon?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# --- Editors / IDEs ---
 .vscode/
 .idea/
-*.swp
-*.swo
+.venv/
+.env
+*.log
+
+# Medien NICHT ignorieren (nur zur Klarstellung, nicht zwingend nötig)
+!**/*.mp4
+!**/*.mov
+!**/*.png
+!**/*.jpg
+!**/*.jpeg
+!**/*.gif
+!**/*.webp
+!**/*.svg
+!**/*.tif
+!**/*.tiff
+!**/*.heic
+
+# Dokus beibehalten
+!README.md
+!LICENSE
+!**/*.md
+
+# Falls du bestimmte JSONs trotzdem tracken willst, entferne das # vor den Zeilen:
+# !domain_config.json
+# !item_config.json
+# !slide_config.json
+# !snail_config.json
