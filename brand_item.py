@@ -2,94 +2,51 @@
 """
 brand_item.py
 
-Animates a foreground image (e.g. product shot) sliding across an LED banner canvas.
-Supports JSON-driven configuration (like brand_slide), optional side logos,
-and simple x/y-axis tilt during the float-in.
+Slides one or multiple foreground images (e.g. product shots) vertically across
+an ultra-wide canvas. Items are centered within evenly spaced sections. Optional
+side logos fade in/out and fill available gaps without overlapping items.
+
+Example:
+    python brand_item.py --image nike_shoe.png --item-count 3 --item-spacing 180 \
+      --side-logo nike_logo.png --logo-fill-edges --logo-fade-in 0.5 --logo-fade-out 0.5
 
 Dependencies:
-    pip install pillow moviepy requests
+    pip install pillow moviepy cairosvg
 """
 from __future__ import annotations
-import argparse, json, math, os, sys
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+
+import argparse
+import json
+import os
+import sys
+import io
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
-import requests
 from moviepy.video.VideoClip import VideoClip
 
-BRANDFETCH_URL = "https://api.brandfetch.io/v2/brands/{identifier}"
+try:
+    import cairosvg  # type: ignore
+    HAS_CAIROSVG = True
+except Exception:
+    HAS_CAIROSVG = False
 
 
-def load_config(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    if not isinstance(data, dict):
-        raise SystemExit("Konfigurationsdatei muss ein JSON-Objekt enthalten.")
-    return data
-
-
-@dataclass
-class BrandColor:
-    hex: str
-    type: Optional[str]
-    brightness: Optional[float]
-
-
-@dataclass
-class BrandData:
-    name: Optional[str]
-    domain: Optional[str]
-    colors: List[BrandColor]
-
-
-def hex_to_rgb(h: str) -> Tuple[int, int, int]:
-    h = h.strip().lstrip('#')
-    if len(h) == 3:
-        h = ''.join(ch * 2 for ch in h)
-    if len(h) != 6:
-        return (0, 0, 0)
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-
-
-def relative_luminance(rgb: Tuple[int, int, int]) -> float:
-    def f(c: float) -> float:
-        c = c / 255.0
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-
-    r, g, b = rgb
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
-
-
-def pick_background_color(colors: List[BrandColor]) -> Tuple[int, int, int]:
-    if not colors:
-        return (0, 0, 0)
-    rgb = [(c, hex_to_rgb(c.hex)) for c in colors]
-    return min(rgb, key=lambda x: relative_luminance(x[1]))[1]
-
-
-def ease_out_cubic(x: float) -> float:
-    return 1 - (1 - x) ** 3
-
-
-def ease_in_cubic(x: float) -> float:
-    return x ** 3
-
-
-def fetch_brand(identifier: str, api_key: str) -> BrandData:
-    url = BRANDFETCH_URL.format(identifier=identifier)
-    headers = {"Authorization": f"Bearer {api_key}"}
-    r = requests.get(url, headers=headers, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    colors = [BrandColor(hex=c.get("hex", "#000000"), type=c.get("type"), brightness=c.get("brightness"))
-              for c in (data.get("colors") or [])]
-    return BrandData(name=data.get("name"), domain=data.get("domain"), colors=colors)
-
-
-def load_image(path: str, max_height: Optional[int], max_width: Optional[int]) -> Image.Image:
-    img = Image.open(path).convert("RGBA")
+def load_image(path: str, max_height: Optional[int] = None, max_width: Optional[int] = None) -> Image.Image:
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".svg":
+        if not HAS_CAIROSVG:
+            raise SystemExit("SVG-Datei benötigt cairosvg. Bitte installieren oder PNG nutzen.")
+        with open(path, "rb") as fh:
+            svg_bytes = fh.read()
+        png_bytes = cairosvg.svg2png(bytestring=svg_bytes)
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+    else:
+        img = Image.open(path)
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
     w, h = img.size
     scale = 1.0
     if max_height and h > max_height:
@@ -101,25 +58,22 @@ def load_image(path: str, max_height: Optional[int], max_width: Optional[int]) -
     return img
 
 
-def apply_axis_rotation(img: Image.Image, axis: str, angle_deg: float) -> Image.Image:
-    if axis not in ("x", "y") or angle_deg <= 1e-6:
-        return img
-    w, h = img.size
-    rad = math.radians(min(89.0, max(0.0, angle_deg)))
-    cos_v = abs(math.cos(rad))
-    if axis == "x":
-        new_h = max(1, int(round(h * cos_v)))
-        scaled = img.resize((w, new_h), Image.LANCZOS)
-        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        y_off = (h - new_h) // 2
-        canvas.paste(scaled, (0, y_off), scaled)
-        return canvas
-    new_w = max(1, int(round(w * cos_v)))
-    scaled = img.resize((new_w, h), Image.LANCZOS)
-    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    x_off = (w - new_w) // 2
-    canvas.paste(scaled, (x_off, 0), scaled)
-    return canvas
+def hex_to_rgb(h: str) -> Tuple[int, int, int]:
+    h = h.strip().lstrip('#')
+    if len(h) == 3:
+        h = ''.join(ch * 2 for ch in h)
+    if len(h) != 6:
+        return (0, 0, 0)
+    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def relative_luminance(rgb: Tuple[int, int, int]) -> float:
+    def f(c: float) -> float:
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = rgb
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
 
 
 def fade_factor(t: float, total: float, fade_in: float, fade_out: float) -> float:
@@ -146,430 +100,288 @@ def paste_with_alpha(frame: Image.Image, img: Image.Image, pos: Tuple[int, int],
     frame.paste(temp, pos, temp)
 
 
+def ease_out_cubic(x: float) -> float:
+    return 1 - (1 - x) ** 3
+
+
+def ease_in_cubic(x: float) -> float:
+    return x ** 3
+
+
 @dataclass
 class RenderConfig:
-    width: int; height: int; fps: int
+    width: int
+    height: int
+    fps: int
     bg_rgb: Tuple[int, int, int]
     item_img: Image.Image
+    item_offsets: List[Tuple[int, int]]
+    group_width: int
+    group_height: int
     slide_from: str
-    exit_to: Optional[str]
-    in_duration: float; hold_duration: float; out_duration: float
+    exit_to: str
+    in_duration: float
+    hold_duration: float
+    out_duration: float
     total_duration: float
-    rotate_axis: str; rotate_angle: float; rotate_speed: float
-    logo_img: Optional[Image.Image] = None
-    logo_padding: int = 120
-    logo_positions_left: Optional[List[int]] = None
-    logo_positions_right: Optional[List[int]] = None
-    logo_static_positions: Optional[List[int]] = None
-    logo_in_duration: float = 0.8
-    logo_hold_duration: float = 2.5
-    logo_out_duration: float = 0.8
-    logo_slide_from_left: str = "left"
-    logo_slide_from_right: str = "right"
-    freeze_item: bool = False
-    freeze_logos: bool = False
-    logo_fill_edges: bool = False
-    item_start_left: Optional[int] = None
-    item_start_right: Optional[int] = None
-    item_exit_left: Optional[int] = None
-    item_exit_right: Optional[int] = None
-    item_count: int = 1
-    item_spacing: int = 0
-    item_offsets: List[Tuple[int, int]] = field(default_factory=list)
-    group_width: int = 0
-    group_height: int = 0
-    logo_total_duration: float = 0.0
-    logo_fade_in: float = 0.0
-    logo_fade_out: float = 0.0
+    freeze_item: bool
+    logo_img: Optional[Image.Image]
+    logo_positions_left: List[List[int]]
+    logo_positions_right: List[List[int]]
+    logo_padding: int
+    logo_total_duration: float
+    logo_fade_in: float
+    logo_fade_out: float
+    logo_in_duration: float
+    logo_hold_duration: float
+    logo_out_duration: float
+    freeze_logos: bool
+    item_fade_in: float
+    item_fade_out: float
 
 
-def position_for_progress(progress: float, cfg: RenderConfig, item_size: Tuple[int, int]) -> Tuple[int, int]:
-    W, H = cfg.width, cfg.height
-    iw, ih = item_size
+def position_for_progress(progress: float, cfg: RenderConfig) -> Tuple[int, int]:
     total = cfg.in_duration + cfg.hold_duration + cfg.out_duration
     t = max(0.0, min(progress, total))
-    cx = (W - iw) // 2; cy = (H - ih) // 2
+    cx = (cfg.width - cfg.group_width) // 2
+    cy = (cfg.height - cfg.group_height) // 2
     if cfg.freeze_item:
         return (cx, cy)
+
     if t <= cfg.in_duration:
-        p = 0.0 if cfg.in_duration == 0 else t / cfg.in_duration; e = ease_out_cubic(p)
-        if cfg.slide_from == "left":
-            start = cfg.item_start_left if cfg.item_start_left is not None else -iw
-            return (int(round(start + e * (cx - start))), cy)
-        if cfg.slide_from == "right":
-            start = cfg.item_start_right if cfg.item_start_right is not None else W
-            return (int(round(start - e * (start - cx))), cy)
+        p = 0.0 if cfg.in_duration == 0 else t / cfg.in_duration
+        e = ease_out_cubic(p)
         if cfg.slide_from == "top":
-            return (cx, int(round(-ih + e * (cy + ih))))
-        return (cx, int(round(H - e * (H - cy))))
+            start_y = -cfg.group_height
+            return (cx, int(round(start_y + e * (cy - start_y))))
+        start_y = cfg.height
+        return (cx, int(round(start_y - e * (start_y - cy))))
+
     if t <= cfg.in_duration + cfg.hold_duration:
         return (cx, cy)
-    t_out = t - (cfg.in_duration + cfg.hold_duration)
-    p = 0.0 if cfg.out_duration == 0 else t_out / cfg.out_duration; e = ease_in_cubic(p)
-    exit_dir = cfg.exit_to or cfg.slide_from
-    target_x, target_y = cx, cy
-    if exit_dir == "left":
-        target_x = cfg.item_exit_left if cfg.item_exit_left is not None else -iw
-    elif exit_dir == "right":
-        target_x = cfg.item_exit_right if cfg.item_exit_right is not None else W
-    elif exit_dir == "top":
-        target_y = -ih
-    elif exit_dir == "bottom":
-        target_y = H
 
-    new_x = int(round(cx + e * (target_x - cx)))
-    new_y = int(round(cy + e * (target_y - cy)))
-    return (new_x, new_y)
+    t_out = t - (cfg.in_duration + cfg.hold_duration)
+    p = 0.0 if cfg.out_duration == 0 else t_out / cfg.out_duration
+    e = ease_in_cubic(min(1.0, p))
+    exit_dir = cfg.exit_to if cfg.exit_to != "auto" else cfg.slide_from
+    target_y = -cfg.group_height if exit_dir == "top" else cfg.height
+    return (cx, int(round(cy + e * (target_y - cy))))
+
+
+def animate_logo(t: float, final_x: int, side: str, cfg: RenderConfig, logo_width: int) -> Tuple[int, float]:
+    total = cfg.logo_total_duration
+    tt = max(0.0, min(t, total)) if total > 0 else t
+    fade = fade_factor(tt, total, cfg.logo_fade_in, cfg.logo_fade_out) if total > 0 else 1.0
+    if cfg.freeze_logos or total == 0:
+        return final_x, fade
+    in_d = cfg.logo_in_duration
+    hold_d = cfg.logo_hold_duration
+    out_d = cfg.logo_out_duration
+    start = -logo_width - cfg.logo_padding if side == "left" else cfg.width + cfg.logo_padding
+    exit_pos = start
+    if tt <= in_d:
+        p = 0.0 if in_d == 0 else tt / in_d
+        e = ease_out_cubic(p)
+        pos = int(round(start + e * (final_x - start)))
+    elif tt <= in_d + hold_d:
+        pos = final_x
+    elif out_d == 0:
+        pos = exit_pos
+    else:
+        t_out = tt - (in_d + hold_d)
+        p = 0.0 if out_d == 0 else min(1.0, t_out / out_d)
+        e = ease_in_cubic(p)
+        pos = int(round(final_x + e * (exit_pos - final_x)))
+    return pos, fade
 
 
 def render_frame(t: float, cfg: RenderConfig) -> Image.Image:
-    base_item = cfg.item_img
-    angle = 0.0
-    if cfg.rotate_axis in ("x", "y") and cfg.rotate_angle > 0 and cfg.rotate_speed > 0:
-        angle = min(cfg.rotate_angle, cfg.rotate_speed * t)
-    item = apply_axis_rotation(base_item, cfg.rotate_axis, angle) if angle else base_item
     frame = Image.new("RGB", (cfg.width, cfg.height), cfg.bg_rgb)
-
-    group_size = (cfg.group_width, cfg.group_height)
-    anchor_x, anchor_y = position_for_progress(t, cfg, group_size)
+    base_x, base_y = position_for_progress(t, cfg)
+    item_alpha = fade_factor(t, cfg.total_duration, cfg.item_fade_in, cfg.item_fade_out)
     for dx, dy in cfg.item_offsets:
-        frame.paste(item, (anchor_x + dx, anchor_y + dy), item)
+        paste_with_alpha(frame, cfg.item_img, (base_x + dx, base_y + dy), item_alpha)
 
-    if cfg.logo_img is not None and (cfg.logo_positions_left or cfg.logo_positions_right or cfg.logo_static_positions):
+    if cfg.logo_img:
         lw, lh = cfg.logo_img.size
         y_logo = (cfg.height - lh) // 2
+        for row in cfg.logo_positions_left:
+            for lx in row:
+                pos_x, alpha = animate_logo(t, lx, "left", cfg, lw)
+                if pos_x + lw > 0 and pos_x < cfg.width:
+                    paste_with_alpha(frame, cfg.logo_img, (pos_x, y_logo), alpha)
+        for row in cfg.logo_positions_right:
+            for rx in row:
+                pos_x, alpha = animate_logo(t, rx, "right", cfg, lw)
+                if pos_x < cfg.width and pos_x + lw > 0:
+                    paste_with_alpha(frame, cfg.logo_img, (pos_x, y_logo), alpha)
 
-        def anim_pos(final_x: int, side: str) -> Tuple[int, float]:
-            total = cfg.logo_total_duration
-            tt = max(0.0, min(t, total)) if total > 0 else t
-            fade = fade_factor(tt, total, cfg.logo_fade_in, cfg.logo_fade_out) if total > 0 else 1.0
-            if cfg.freeze_logos or total == 0:
-                return final_x, fade
-            in_d = cfg.logo_in_duration
-            hold_d = cfg.logo_hold_duration
-            out_d = cfg.logo_out_duration
-            slide_from = cfg.logo_slide_from_left if side == "left" else cfg.logo_slide_from_right
-            start_left = -lw - cfg.logo_padding
-            start_right = cfg.width + cfg.logo_padding
-            start = start_left if slide_from == "left" else start_right
-            exit_pos = start
-            if tt <= in_d:
-                p = 0.0 if in_d == 0 else tt / in_d
-                e = ease_out_cubic(p)
-                pos = int(round(start + e * (final_x - start)))
-            elif tt <= in_d + hold_d:
-                pos = final_x
-            elif out_d == 0:
-                pos = exit_pos
-            else:
-                t_out = tt - (in_d + hold_d)
-                p = 0.0 if out_d == 0 else min(1.0, t_out / out_d)
-                e = ease_in_cubic(p)
-                pos = int(round(final_x + e * (exit_pos - final_x)))
-            return pos, fade
-
-        for lp in (cfg.logo_positions_left or []):
-            lx, lf = anim_pos(lp, "left")
-            if lx + lw > 0 and lx < cfg.width:
-                paste_with_alpha(frame, cfg.logo_img, (lx, y_logo), lf)
-        for rp in (cfg.logo_positions_right or []):
-            rx, rf = anim_pos(rp, "right")
-            if rx < cfg.width and rx + lw > 0:
-                paste_with_alpha(frame, cfg.logo_img, (rx, y_logo), rf)
-        if cfg.logo_static_positions:
-            static_alpha = fade_factor(t, cfg.total_duration, cfg.logo_fade_in, cfg.logo_fade_out)
-            for sx in cfg.logo_static_positions:
-                if sx + lw > 0 and sx < cfg.width:
-                    paste_with_alpha(frame, cfg.logo_img, (sx, y_logo), static_alpha)
     return frame
 
 
-def main():
-    config_parser = argparse.ArgumentParser(add_help=False)
-    config_parser.add_argument("--config", type=str, help="Pfad zu einer JSON-Konfiguration")
+def fill_logo_positions(section_start: int, section_end: int, logo_width: int, padding: int,
+                        fill: bool, width: int) -> List[int]:
+    available = section_end - section_start
+    if available < logo_width:
+        return []
+    step = logo_width + padding
+    if fill and step > 0:
+        count = max(1, int((available + padding) // step))
+    else:
+        count = 1
+    total = count * logo_width + (count - 1) * padding
+    base = section_start + max(0, (available - total) // 2)
+    return [int(base + i * (logo_width + padding)) for i in range(count)]
 
-    config_args, remaining = config_parser.parse_known_args()
-    config_data: Dict[str, Any] = {}
-    config_base_dir = os.getcwd()
-    if getattr(config_args, "config", None):
-        config_path = os.path.abspath(config_args.config)
-        if not os.path.exists(config_path):
-            raise SystemExit(f"Konfigurationsdatei nicht gefunden: {config_path}")
-        config_data = load_config(config_path)
-        config_base_dir = os.path.dirname(config_path)
 
-    defaults: Dict[str, Any] = {
-        "identifier": None,
-        "api_key": None,
-        "image": None,
-        "width": 7080,
-        "height": 108,
-        "fps": 60,
-        "output": "output_item.mp4",
-        "bg_override": None,
-        "slide_from": "top",
-        "exit_to": "auto",
-        "in_duration": 0.8,
-        "hold_duration": 2.5,
-        "out_duration": 0.8,
-        "pix_fmt": "yuv420p",
-        "crf": 18,
-        "image_height_factor": 0.8,
-        "image_max_height": None,
-        "image_max_width": None,
-        "rotate_axis": "none",
-        "rotate_angle": 45.0,
-        "rotate_speed": 90.0,
-        "side_logo": None,
-        "side_logo_max_height": None,
-        "side_logo_height_factor": 0.98,
-        "side_logo_padding": 120,
-        "logo_in_duration": 0.8,
-        "logo_hold_duration": 2.5,
-        "logo_out_duration": 0.8,
-        "logo_slide_from_left": "left",
-        "logo_slide_from_right": "right",
-        "freeze_item": False,
-        "freeze_logos": False,
-        "logo_fill_edges": False,
-        "item_count": 1,
-        "item_spacing": 120,
-        "logo_fade_in": 0.0,
-        "logo_fade_out": 0.0
-    }
-    defaults.update({k: v for k, v in config_data.items() if k in defaults})
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, help="Pfad zu einer JSON-Konfiguration")
+    parser.add_argument("--image", required=False)
+    parser.add_argument("--width", type=int, default=7080)
+    parser.add_argument("--height", type=int, default=108)
+    parser.add_argument("--fps", type=int, default=60)
+    parser.add_argument("--output", default="output_item.mp4")
+    parser.add_argument("--bg-color", default="#000000")
+    parser.add_argument("--slide-from", choices=["top", "bottom"], default="top")
+    parser.add_argument("--exit-to", choices=["auto", "top", "bottom"], default="bottom")
+    parser.add_argument("--in-duration", type=float, default=0.8)
+    parser.add_argument("--hold-duration", type=float, default=2.5)
+    parser.add_argument("--out-duration", type=float, default=0.8)
+    parser.add_argument("--item-fade-in", type=float, default=0.0)
+    parser.add_argument("--item-fade-out", type=float, default=0.0)
+    parser.add_argument("--side-logo", type=str, default=None)
+    parser.add_argument("--side-logo-height-factor", type=float, default=0.98)
+    parser.add_argument("--side-logo-padding", type=int, default=120)
+    parser.add_argument("--logo-fill-edges", action="store_true")
+    parser.add_argument("--freeze-item", action="store_true")
+    parser.add_argument("--freeze-logos", action="store_true")
+    parser.add_argument("--logo-in-duration", type=float, default=0.8)
+    parser.add_argument("--logo-hold-duration", type=float, default=2.5)
+    parser.add_argument("--logo-out-duration", type=float, default=0.8)
+    parser.add_argument("--logo-fade-in", type=float, default=0.0)
+    parser.add_argument("--logo-fade-out", type=float, default=0.0)
+    parser.add_argument("--item-count", type=int, default=1)
+    parser.add_argument("--item-spacing", type=int, default=120)
+    parser.add_argument("--pix-fmt", type=str, default="yuv420p")
+    parser.add_argument("--crf", type=int, default=18)
 
-    parser = argparse.ArgumentParser(parents=[config_parser])
-    parser.add_argument("--identifier", default=defaults.get("identifier"))
-    parser.add_argument("--api-key", default=defaults.get("api_key"))
-    parser.add_argument("--image", default=defaults.get("image"), help="Pfad zu einem PNG/JPG mit Transparenz")
-    parser.add_argument("--width", type=int, default=int(defaults.get("width", 7080)))
-    parser.add_argument("--height", type=int, default=int(defaults.get("height", 108)))
-    parser.add_argument("--fps", type=int, default=int(defaults.get("fps", 60)))
-    parser.add_argument("--output", default=defaults.get("output", "output_item.mp4"))
+    args = parser.parse_args()
 
-    parser.add_argument("--bg-override", default=defaults.get("bg_override"))
-
-    parser.add_argument("--slide-from", choices=["top", "bottom"],
-                        default=defaults.get("slide_from", "top"))
-    parser.add_argument("--exit-to", choices=["auto", "top", "bottom"],
-                        default=defaults.get("exit_to", "auto"))
-    parser.add_argument("--in-duration", type=float, default=float(defaults.get("in_duration", 0.8)))
-    parser.add_argument("--hold-duration", type=float, default=float(defaults.get("hold_duration", 2.5)))
-    parser.add_argument("--out-duration", type=float, default=float(defaults.get("out_duration", 0.8)))
-
-    parser.add_argument("--image-height-factor", type=float,
-                        default=float(defaults.get("image_height_factor", 0.8)))
-    parser.add_argument("--image-max-height", type=int, default=defaults.get("image_max_height"))
-    parser.add_argument("--image-max-width", type=int, default=defaults.get("image_max_width"))
-
-    parser.add_argument("--rotate-axis", choices=["none", "x", "y"],
-                        default=defaults.get("rotate_axis", "none"))
-    parser.add_argument("--rotate-angle", type=float, default=float(defaults.get("rotate_angle", 45.0)))
-    parser.add_argument("--rotate-speed", type=float, default=float(defaults.get("rotate_speed", 90.0)))
-
-    parser.add_argument("--pix-fmt", default=defaults.get("pix_fmt", "yuv420p"))
-    parser.add_argument("--crf", type=int, default=int(defaults.get("crf", 18)))
-
-    parser.add_argument("--side-logo", default=defaults.get("side_logo"))
-    parser.add_argument("--side-logo-max-height", type=int, default=defaults.get("side_logo_max_height"))
-    parser.add_argument("--side-logo-height-factor", type=float,
-                        default=float(defaults.get("side_logo_height_factor", 0.98)))
-    parser.add_argument("--side-logo-padding", type=int, default=int(defaults.get("side_logo_padding", 120)))
-    parser.add_argument("--logo-in-duration", type=float, default=float(defaults.get("logo_in_duration", 0.8)))
-    parser.add_argument("--logo-hold-duration", type=float, default=float(defaults.get("logo_hold_duration", 2.5)))
-    parser.add_argument("--logo-out-duration", type=float, default=float(defaults.get("logo_out_duration", 0.8)))
-    parser.add_argument("--logo-slide-from-left", choices=["left", "right"],
-                        default=defaults.get("logo_slide_from_left", "left"))
-    parser.add_argument("--logo-slide-from-right", choices=["left", "right"],
-                        default=defaults.get("logo_slide_from_right", "right"))
-    parser.add_argument("--freeze-item", action="store_true", dest="freeze_item",
-                        default=bool(defaults.get("freeze_item", False)))
-    parser.add_argument("--no-freeze-item", action="store_false", dest="freeze_item", help=argparse.SUPPRESS)
-    parser.add_argument("--freeze-logos", action="store_true", dest="freeze_logos",
-                        default=bool(defaults.get("freeze_logos", False)))
-    parser.add_argument("--no-freeze-logos", action="store_false", dest="freeze_logos", help=argparse.SUPPRESS)
-    parser.add_argument("--logo-fill-edges", action="store_true", dest="logo_fill_edges",
-                        default=bool(defaults.get("logo_fill_edges", False)))
-    parser.add_argument("--no-logo-fill-edges", action="store_false", dest="logo_fill_edges", help=argparse.SUPPRESS)
-    parser.add_argument("--item-count", type=int, default=int(defaults.get("item_count", 1)))
-    parser.add_argument("--item-spacing", type=int, default=int(defaults.get("item_spacing", 120)))
-    parser.add_argument("--logo-fade-in", type=float, default=float(defaults.get("logo_fade_in", 0.0)))
-    parser.add_argument("--logo-fade-out", type=float, default=float(defaults.get("logo_fade_out", 0.0)))
-
-    args = parser.parse_args(remaining)
+    if args.config:
+        with open(args.config, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        cli_args = vars(args)
+        for k, v in data.items():
+            if k in cli_args and cli_args[k] in (None, False, 0, ""):
+                setattr(args, k, v)
 
     if not args.image:
-        parser.error("--image muss gesetzt werden (oder in der JSON-Konfiguration).")
-
-    if not args.identifier and (args.api_key or args.side_logo):
-        # allow local mode without identifier
-        args.identifier = "local"
-
-    if args.identifier and args.identifier.lower() != "local" and not args.api_key:
-        parser.error("Brandfetch-Modus benötigt --api-key.")
-
-    if args.identifier and args.identifier.lower() != "local":
-        brand = fetch_brand(args.identifier, args.api_key)
-        bg_rgb = hex_to_rgb(args.bg_override) if args.bg_override else pick_background_color(brand.colors)
-    else:
-        bg_rgb = hex_to_rgb(args.bg_override) if args.bg_override else (0, 0, 0)
-
-    img_path = args.image
-    candidate_paths = [img_path]
-    if not os.path.isabs(img_path):
-        candidate_paths.insert(0, os.path.join(config_base_dir, img_path))
-        candidate_paths.append(os.path.abspath(img_path))
-    resolved_image = next((p for p in candidate_paths if os.path.exists(p)), None)
-    if not resolved_image:
+        raise SystemExit("Bitte --image angeben oder im JSON setzen.")
+    if not os.path.exists(args.image):
         raise SystemExit(f"Bild nicht gefunden: {args.image}")
 
-    target_max_height = args.image_max_height
-    if not target_max_height and args.image_height_factor:
-        target_max_height = max(1, int(round(args.height * float(args.image_height_factor))))
-    item_count = max(1, int(args.item_count))
-    spacing = max(0, int(round(args.item_spacing)))
+    bg_rgb = hex_to_rgb(args.bg_color)
 
-    item_img = load_image(resolved_image, target_max_height, args.image_max_width)
-    iw, ih = item_img.size
+    target_max_height = int(round(args.height * 0.9))
+    item_img = load_image(args.image, target_max_height)
+
+    item_count = max(1, args.item_count)
+    spacing = max(0, args.item_spacing)
 
     section_width = max(1, args.width // (item_count * 2))
-    max_item_width = section_width
-    if iw > max_item_width:
-        scale = max_item_width / float(iw)
-        iw = max(1, int(round(iw * scale)))
-        ih = max(1, int(round(ih * scale)))
-        item_img = item_img.resize((iw, ih), Image.LANCZOS)
+    iw, ih = item_img.size
+    if iw > section_width:
+        scale = section_width / float(iw)
+        item_img = item_img.resize((max(1, int(round(iw * scale))), max(1, int(round(ih * scale)))), Image.LANCZOS)
+        iw, ih = item_img.size
 
     item_offsets: List[Tuple[int, int]] = []
-    logo_img: Optional[Image.Image] = None
-    logo_positions_left: List[int] = []
-    logo_positions_right: List[int] = []
-    logo_static_positions: List[int] = []
-
     for idx in range(item_count):
         section_start = idx * 2 * section_width
-        section_mid = section_start + section_width
-        item_x = section_mid + (section_width - iw) // 2
-        item_offsets.append((item_x, 0))
+        item_section_start = section_start + section_width
+        offset_x = item_section_start + (section_width - iw) // 2
+        item_offsets.append((offset_x, 0))
 
-    min_x = min((x for x, _ in item_offsets), default=0)
-    item_offsets = [(x - min_x, y) for x, y in item_offsets]
+    min_offset = min((x for x, _ in item_offsets), default=0)
+    item_offsets = [(x - min_offset, y) for x, y in item_offsets]
     group_width = max((x + iw) for x, _ in item_offsets) if item_offsets else iw
     group_height = ih
-    group_left = max(0, (args.width - group_width) // 2)
 
-    logo_img: Optional[Image.Image] = None
-    logo_positions_left: List[int] = []
-    logo_positions_right: List[int] = []
-    logo_static_positions: List[int] = []
-
-    logo_padding = max(0, int(args.side_logo_padding))
+    logo_img = None
+    logo_positions_left: List[List[int]] = []
+    logo_positions_right: List[List[int]] = []
     if args.side_logo:
-        candidate = args.side_logo
-        candidate_paths = [candidate]
-        if not os.path.isabs(candidate):
-            candidate_paths.insert(0, os.path.join(config_base_dir, candidate))
-            candidate_paths.append(os.path.abspath(candidate))
-        logo_path = next((p for p in candidate_paths if os.path.exists(p)), None)
-        if not logo_path:
-            raise SystemExit(f"Seitenlogo nicht gefunden: {args.side_logo}")
-        if args.side_logo_max_height:
-            max_logo_h = args.side_logo_max_height
-        else:
-            factor = args.side_logo_height_factor if args.side_logo_height_factor else 0.98
-            max_logo_h = max(1, int(round(args.height * factor)))
-        logo_img_candidate = load_image(logo_path, max_logo_h, None)
-        lw, _ = logo_img_candidate.size
-
-        item_positions = [(group_left + offset_x, group_left + offset_x + iw) for offset_x, _ in item_offsets]
-        for start, end in item_positions:
-            left_start = max(start - lw - logo_padding, 0)
-            left_end = start - logo_padding
-            right_start = end + logo_padding
-            right_end = min(end + lw + logo_padding, args.width)
-
-            def fill_interval(a: int, b: int) -> List[int]:
-                interval = []
-                available = b - a
-                if available < lw:
-                    return interval
-                step = lw + logo_padding
-                if args.logo_fill_edges and step > 0:
-                    count = max(1, int((available + logo_padding) // step))
-                else:
-                    count = 1
-                total = count * lw + (count - 1) * logo_padding
-                base = a + max(0, (available - total) // 2)
-                for i in range(count):
-                    interval.append(int(base + i * (lw + logo_padding)))
-                return interval
-
-            logo_static_positions.extend(fill_interval(left_start, left_end))
-            logo_static_positions.extend(fill_interval(right_start, right_end))
-
-        logo_img = logo_img_candidate
-
-    item_start_left = -group_width
-    item_start_right = args.width
-    item_exit_left = -group_width
-    item_exit_right = args.width
+        if not os.path.exists(args.side_logo):
+            raise SystemExit(f"Logo nicht gefunden: {args.side_logo}")
+        max_logo_h = max(1, int(round(args.height * float(args.side_logo_height_factor))))
+        logo_img = load_logo(args.side_logo, max_logo_h)
+        lw, _ = logo_img.size
+        for idx, (offset_x, _) in enumerate(item_offsets):
+            section_start = idx * 2 * section_width
+            item_section_start = section_start + section_width
+            item_actual_x = offset_x
+            group_left = max(0, (args.width - group_width) // 2)
+            item_left = group_left + item_actual_x
+            item_right = item_left + iw
+            left_zone_start = section_start
+            left_zone_end = min(item_left, item_section_start)
+            right_zone_start = item_right
+            right_zone_end = min(right_zone_start + section_width, args.width)
+            logo_positions_left.append(
+                fill_logo_positions(left_zone_start, left_zone_end, lw, args.side_logo_padding,
+                                     args.logo_fill_edges, args.width)
+            )
+            logo_positions_right.append(
+                fill_logo_positions(right_zone_start, right_zone_end, lw, args.side_logo_padding,
+                                     args.logo_fill_edges, args.width)
+            )
 
     text_total = max(0.0, args.in_duration) + max(0.0, args.hold_duration) + max(0.0, args.out_duration)
     logo_total = 0.0
     if logo_img is not None:
         logo_total = max(0.0, args.logo_in_duration) + max(0.0, args.logo_hold_duration) + max(0.0, args.logo_out_duration)
     total_duration = max(0.01, max(text_total, logo_total))
+    exit_to = args.exit_to if args.exit_to != "auto" else "bottom"
 
-    exit_to = None if args.exit_to == "auto" else args.exit_to
+    cfg = RenderConfig(
+        width=args.width,
+        height=args.height,
+        fps=args.fps,
+        bg_rgb=bg_rgb,
+        item_img=item_img,
+        item_offsets=item_offsets,
+        group_width=group_width,
+        group_height=group_height,
+        slide_from=args.slide_from,
+        exit_to=exit_to,
+        in_duration=max(0.0, args.in_duration),
+        hold_duration=max(0.0, args.hold_duration),
+        out_duration=max(0.0, args.out_duration),
+        total_duration=total_duration,
+        freeze_item=bool(args.freeze_item),
+        logo_img=logo_img,
+        logo_positions_left=logo_positions_left,
+        logo_positions_right=logo_positions_right,
+        logo_padding=args.side_logo_padding,
+        logo_total_duration=logo_total,
+        logo_fade_in=max(0.0, args.logo_fade_in),
+        logo_fade_out=max(0.0, args.logo_fade_out),
+        logo_in_duration=max(0.0, args.logo_in_duration),
+        logo_hold_duration=max(0.0, args.logo_hold_duration),
+        logo_out_duration=max(0.0, args.logo_out_duration),
+        freeze_logos=bool(args.freeze_logos),
+        item_fade_in=max(0.0, args.item_fade_in),
+        item_fade_out=max(0.0, args.item_fade_out),
+    )
 
-    cfg = RenderConfig(width=args.width, height=args.height, fps=args.fps,
-                       bg_rgb=bg_rgb, item_img=item_img,
-                       slide_from=args.slide_from,
-                       exit_to=exit_to,
-                       in_duration=max(0.0, args.in_duration),
-                       hold_duration=max(0.0, args.hold_duration),
-                       out_duration=max(0.0, args.out_duration),
-                       total_duration=total_duration,
-                       rotate_axis=args.rotate_axis,
-                       rotate_angle=max(0.0, args.rotate_angle),
-                       rotate_speed=max(0.0, args.rotate_speed),
-                       logo_img=logo_img,
-                       logo_padding=logo_padding,
-                       logo_positions_left=logo_positions_left or None,
-                       logo_positions_right=logo_positions_right or None,
-                       logo_static_positions=logo_static_positions or None,
-                       logo_in_duration=max(0.0, args.logo_in_duration),
-                       logo_hold_duration=max(0.0, args.logo_hold_duration),
-                       logo_out_duration=max(0.0, args.logo_out_duration),
-                       logo_slide_from_left=args.logo_slide_from_left,
-                       logo_slide_from_right=args.logo_slide_from_right,
-                       freeze_item=bool(args.freeze_item),
-                       freeze_logos=bool(args.freeze_logos),
-                       logo_fill_edges=bool(args.logo_fill_edges),
-                       item_start_left=item_start_left,
-                       item_start_right=item_start_right,
-                       item_exit_left=item_exit_left,
-                       item_exit_right=item_exit_right,
-                       item_count=item_count,
-                       item_spacing=spacing,
-                       item_offsets=item_offsets,
-                       group_width=group_width,
-                       group_height=group_height,
-                       logo_total_duration=logo_total,
-                       logo_fade_in=max(0.0, args.logo_fade_in),
-                       logo_fade_out=max(0.0, args.logo_fade_out))
-
-    def make_frame(tt: float) -> np.ndarray:
-        return np.array(render_frame(tt, cfg))
-
-    clip = VideoClip(lambda tt: make_frame(tt), duration=total_duration).with_fps(cfg.fps)
+    clip = VideoClip(lambda tt: np.array(render_frame(tt, cfg)), duration=total_duration).with_fps(cfg.fps)
     ext = os.path.splitext(args.output)[1].lower()
     if ext == ".gif":
-        clip.write_gif(args.output, fps=cfg.fps, program="ffmpeg")
+        clip.write_gif(args.output, fps=args.fps, program="ffmpeg")
     else:
         ffmpeg_params = ["-pix_fmt", args.pix_fmt, "-crf", str(args.crf), "-tune", "animation"]
-        clip.write_videofile(args.output, fps=cfg.fps, codec="libx264", audio=False,
+        clip.write_videofile(args.output, fps=args.fps, codec="libx264", audio=False,
                              preset="medium", ffmpeg_params=ffmpeg_params)
     print(f"✅ Fertig: {args.output}")
 
