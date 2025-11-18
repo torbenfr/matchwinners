@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="500" height="60" viewBox="0 0 500 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="60" fill="#050505"/>
+  <polygon points="24,12 52,30 24,48" fill="#7CFF4F"/>
+  <polygon points="46,12 74,30 46,48" fill="#BBFF85"/>
+  <text x="140" y="40" font-family="'Space Grotesk','Inter','Arial Black',sans-serif" font-size="32" font-weight="700" fill="#050505" letter-spacing="2">
+    MATCHWINNERS.COM
+  </text>
+</svg>
